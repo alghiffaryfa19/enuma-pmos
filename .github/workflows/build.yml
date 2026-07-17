@@ -54,7 +54,7 @@ jobs:
           git remote add enuma https://gitlab.postmarketos.org/alghiffaryfa19/pmaports.git
 
           # Ambil branch dari fork kamu
-          git fetch --depth=1 enuma main
+          git fetch --depth=1 enuma enuma
 
           # Pakai isi fork kamu, tapi remote origin tetap upstream resmi
           git checkout -B main FETCH_HEAD
