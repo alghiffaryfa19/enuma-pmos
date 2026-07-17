@@ -1,0 +1,136 @@
+name: Xiaomi Pad 5 Pro 5G postmarketOS
+on:
+  push: # Build when push
+  workflow_dispatch:
+  schedule:
+    - cron: "0 0 * * 5" # Start build every friday
+
+jobs:
+  build-image:
+    strategy:
+      matrix:
+        version: ["default"]
+
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out build configurations
+        uses: actions/checkout@v4
+
+      - name: Set current date variable
+        run: echo "CURRENT_DATE=$(date +%Y-%m-%d)" >> $GITHUB_ENV
+
+      - name: Create artifact directory
+        run: |
+          mkdir out
+
+      - name: Substitute placeholders in configs
+        run: |
+          find . -type f -name "*.cfg" -exec sed -i "s|HOME|$(echo $HOME)|;s|NPROC|$(nproc)|" {} +
+
+      - name: Install pmbootstrap from git
+        run: |
+          git clone --depth=1 https://gitlab.postmarketos.org/postmarketOS/pmbootstrap.git
+          mkdir -p ~/.local/bin
+          ln -s "$PWD/pmbootstrap/pmbootstrap.py" ~/.local/bin/pmbootstrap
+          pmbootstrap --version
+
+      - name: Set up pmaports
+        run: |
+          mkdir -p ~/.config
+          cp xiaomi-enuma.cfg ~/.config/pmbootstrap_v3.cfg
+
+          PMB_WORK="$HOME/.local/var/pmbootstrap"
+          PMAPORTS="$PMB_WORK/cache_git/pmaports"
+
+          rm -rf "$PMAPORTS"
+          mkdir -p "$(dirname "$PMAPORTS")"
+
+          # Clone upstream resmi agar pmbootstrap tetap mengenali pmaports
+          git clone --depth=1 https://gitlab.postmarketos.org/postmarketOS/pmaports.git "$PMAPORTS"
+
+          cd "$PMAPORTS"
+
+          # Tambahkan fork kamu
+          git remote add enuma https://gitlab.postmarketos.org/alghiffaryfa19/pmaports.git
+
+          # Ambil branch dari fork kamu
+          git fetch --depth=1 enuma main
+
+          # Pakai isi fork kamu, tapi remote origin tetap upstream resmi
+          git checkout -B main FETCH_HEAD
+
+          git remote -v
+          git branch --show-current
+
+          test -d device/testing/device-xiaomi-enuma || find device -maxdepth 3 -name "*enuma*"
+
+          yes "" | pmbootstrap --details-to-stdout --aports "$PMAPORTS" init
+
+          pmbootstrap status
+
+      - name: Install zstd in chroot
+        run: |
+          pmbootstrap chroot -- apk add zstd
+
+      - name: Build the xiaomi-enuma without DE
+        run: |
+          pmbootstrap install --password 147147
+
+          pmbootstrap export
+          cp /tmp/postmarketOS-export/boot.img out/boot-xiaomi-enuma.img
+          cp /tmp/postmarketOS-export/xiaomi-enuma.img out/rootfs-xiaomi-enuma-none.img
+
+      - name: Show log
+        if: always()
+        run: |
+          cat /home/runner/.local/var/pmbootstrap/log.txt
+
+      - name: Breakpoint if tests failed for xiaomi-enuma without DE
+        if: failure()
+        uses: namespacelabs/breakpoint-action@v0
+        with:
+          duration: 30m
+          authorized-users: alghiffaryfa19
+
+      - name: Upload artifacts xiaomi-enuma without DE
+        uses: actions/upload-artifact@v4
+        with:
+          name: xiaomi-enuma-none_${{ env.CURRENT_DATE }}
+          path: out/*.img*
+          retention-days: 7
+
+      - name: Build the xiaomi-enuma with Phosh
+        run: |
+          yes | pmbootstrap zap
+          rm -r out/*
+          pmbootstrap install --password 147147 --add postmarketos-ui-phosh
+          cat /home/runner/.local/var/pmbootstrap/log.txt
+          pmbootstrap export
+          cp /tmp/postmarketOS-export/boot.img out/boot-xiaomi-enuma.img
+          cp /tmp/postmarketOS-export/xiaomi-enuma.img out/rootfs-xiaomi-enuma-phosh.img
+
+      - name: Breakpoint if tests failed for xiaomi-enuma with Phosh
+        if: failure()
+        uses: namespacelabs/breakpoint-action@v0
+        with:
+          duration: 30m
+          authorized-users: alghiffaryfa19
+
+      - name: Upload artifacts xiaomi-enuma with Phosh
+        uses: actions/upload-artifact@v4
+        with:
+          name: xiaomi-enuma-phosh_${{ env.CURRENT_DATE }}
+          path: out/*.img*
+          retention-days: 7
+
+      - name: Copy xiaomi-enuma kernel
+        run: |
+          rm -r out/*
+          cp ~/.local/var/pmbootstrap/packages/edge/aarch64/linux-postmarketos-qcom-sm8250-*.apk out/
+
+      - name: Upload artifacts xiaomi-enuma kernel
+        uses: actions/upload-artifact@v4
+        with:
+          name: xiaomi-enuma-kernel_${{ env.CURRENT_DATE }}
+          path: out/*.apk
+          retention-days: 7
