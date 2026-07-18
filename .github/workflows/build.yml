@@ -75,6 +75,7 @@ jobs:
       - name: Build the xiaomi-enuma without DE
         run: |
           pmbootstrap install --password 147147
+          pmbootstrap checksum linux-postmarketos-qcom-sm8250
 
           pmbootstrap export
           cp /tmp/postmarketOS-export/boot.img out/boot-xiaomi-enuma.img
